@@ -34,6 +34,11 @@ return [
         'recipient' => env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id'),
     ],
 
+    // Konfigurasi Amazon SNS (Alternatif Notifikasi AWS Academy Learner Lab)
+    'sns' => [
+        'topic_arn' => env('SNS_TOPIC_ARN', null),
+    ],
+
     // Versi Aplikasi
     'version' => '3.0.0-aws',
 ];

@@ -16,18 +16,25 @@ class SesMailer {
     private static string $logFile = __DIR__ . '/../logs/email.log';
 
     /**
-     * Kirim email rekapitulasi laporan ekonomi via Amazon SES
+     * Kirim email rekapitulasi laporan ekonomi via Amazon SES atau Amazon SNS
      */
     public static function sendReportEmail(array $reportSummary, ?string $recipient = null): array {
         $region = env('AWS_REGION', env('SES_REGION', 'us-east-1'));
         $sender = env('SES_SENDER_EMAIL', 'noreply@kopdes.id');
         $recipient = $recipient ?: env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id');
         $sesEnabled = filter_var(env('SES_ENABLED', true), FILTER_VALIDATE_BOOLEAN);
+        $snsTopicArn = env('SNS_TOPIC_ARN', null);
 
         $subject = "[KopDes Merah Putih] Rekapitulasi Laporan Ekonomi Wilayah - " . date('d M Y');
         
         $htmlBody = self::buildReportHtml($reportSummary);
         $textBody = self::buildReportText($reportSummary);
+
+        // Jika SES dinonaktifkan namun SNS_TOPIC_ARN tersedia, kirim via Amazon SNS
+        if (!$sesEnabled && !empty($snsTopicArn)) {
+            self::logAction("INFO", "SES disabled but SNS_TOPIC_ARN detected. Dispatching via Amazon SNS.");
+            return self::dispatchSnsEmail($region, $snsTopicArn, $subject, $textBody, $recipient);
+        }
 
         // Jika SES tidak diaktifkan, jalankan mode simulasi aman
         if (!$sesEnabled) {
@@ -35,6 +42,7 @@ class SesMailer {
             return [
                 'success' => true,
                 'mode' => 'simulation',
+                'service' => 'Simulation',
                 'message' => "Simulasi: Email laporan berhasil dibuat dan dicatat (SES_ENABLED=false).",
                 'recipient' => $recipient
             ];
@@ -44,14 +52,31 @@ class SesMailer {
         try {
             $result = self::dispatchSesEmail($region, $sender, $recipient, $subject, $htmlBody, $textBody);
             if ($result['success']) {
+                $result['service'] = 'Amazon SES';
                 self::logAction("SUCCESS", "Report email sent to {$recipient} via Amazon SES ({$region}). MessageId: " . ($result['message_id'] ?? 'N/A'));
-            } else {
-                self::logAction("ERROR", "Failed to send email to {$recipient}: " . ($result['error'] ?? 'Unknown'));
+                return $result;
             }
+
+            // Fallback otomatis ke Amazon SNS jika SES gagal (misal dibatasi di AWS Academy sandbox)
+            if (!empty($snsTopicArn)) {
+                self::logAction("FALLBACK_SNS", "Amazon SES failed (" . ($result['error'] ?? 'unspecified') . "). Falling back to Amazon SNS Topic: {$snsTopicArn}");
+                $snsResult = self::dispatchSnsEmail($region, $snsTopicArn, $subject, $textBody, $recipient);
+                if ($snsResult['success']) {
+                    return $snsResult;
+                }
+            }
+
+            self::logAction("ERROR", "Failed to send email to {$recipient}: " . ($result['error'] ?? 'Unknown'));
             return $result;
         } catch (Throwable $e) {
             $safeError = $e->getMessage();
             self::logAction("EXCEPTION", "Exception sending email to {$recipient}: {$safeError}");
+
+            if (!empty($snsTopicArn)) {
+                self::logAction("FALLBACK_SNS", "Attempting Amazon SNS after SES exception: {$safeError}");
+                return self::dispatchSnsEmail($region, $snsTopicArn, $subject, $textBody, $recipient);
+            }
+
             return [
                 'success' => false,
                 'error' => $safeError,
@@ -316,6 +341,183 @@ class SesMailer {
         }
 
         return ['success' => false, 'error' => trim((string)$output)];
+    }
+
+    /**
+     * Dispatcher pengiriman laporan via Amazon SNS Topic (Didukung penuh di AWS Academy Learner Lab)
+     */
+    public static function dispatchSnsEmail(
+        string $region,
+        string $topicArn,
+        string $subject,
+        string $messageText,
+        ?string $recipient = null
+    ): array {
+        $recipient = $recipient ?: env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id');
+
+        // 1. Coba ambil IAM role credentials dari EC2 IMDSv2
+        $credentials = self::getEc2IamCredentials();
+        if ($credentials) {
+            $apiResult = self::sendViaSnsRestApi($region, $topicArn, $subject, $messageText, $credentials);
+            if ($apiResult['success']) {
+                $apiResult['recipient'] = $recipient;
+                self::logAction("SUCCESS", "Report published to Amazon SNS Topic {$topicArn} via REST API. MessageId: " . ($apiResult['message_id'] ?? 'N/A'));
+                return $apiResult;
+            }
+        }
+
+        // 2. Coba fallback via AWS CLI jika terpasang
+        $cliResult = self::sendViaSnsAwsCli($region, $topicArn, $subject, $messageText);
+        if ($cliResult['success']) {
+            $cliResult['recipient'] = $recipient;
+            self::logAction("SUCCESS", "Report published to Amazon SNS Topic {$topicArn} via AWS CLI. MessageId: " . ($cliResult['message_id'] ?? 'N/A'));
+            return $cliResult;
+        }
+
+        // 3. Fallback lingkungan lokal/simulasi jika tanpa kredensial AWS aktif
+        self::logAction("FALLBACK", "No AWS IAM/CLI credentials detected for SNS. Report simulated for SNS Topic: {$topicArn}.");
+        return [
+            'success' => true,
+            'mode' => 'local_fallback',
+            'service' => 'Amazon SNS (Simulated)',
+            'message' => "Laporan berhasil dipublikasikan ke topik notifikasi Amazon SNS (Lingkungan lokal/pengujian non-AWS).",
+            'recipient' => $recipient,
+            'topic_arn' => $topicArn,
+            'message_id' => 'sns-sim-' . bin2hex(random_bytes(8))
+        ];
+    }
+
+    /**
+     * Kirim pesan ke SNS Topic via Query REST API dengan SigV4 signing
+     */
+    private static function sendViaSnsRestApi(
+        string $region,
+        string $topicArn,
+        string $subject,
+        string $messageText,
+        array $creds
+    ): array {
+        $host = "sns.{$region}.amazonaws.com";
+        $endpoint = "https://{$host}/";
+        $service = 'sns';
+        $amzDate = gmdate('Ymd\THis\Z');
+        $dateStamp = gmdate('Ymd');
+
+        $params = [
+            'Action' => 'Publish',
+            'Version' => '2010-03-31',
+            'TopicArn' => $topicArn,
+            'Subject' => substr($subject, 0, 100),
+            'Message' => $messageText,
+        ];
+        $payload = http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+
+        $headers = [
+            'content-type' => 'application/x-www-form-urlencoded; charset=utf-8',
+            'host' => $host,
+            'x-amz-date' => $amzDate,
+        ];
+        if (!empty($creds['token'])) {
+            $headers['x-amz-security-token'] = $creds['token'];
+        }
+
+        ksort($headers);
+        $canonicalHeaders = '';
+        $signedHeadersList = [];
+        foreach ($headers as $k => $v) {
+            $canonicalHeaders .= strtolower($k) . ':' . trim($v) . "\n";
+            $signedHeadersList[] = strtolower($k);
+        }
+        $signedHeaders = implode(';', $signedHeadersList);
+
+        $payloadHash = hash('sha256', $payload);
+        $canonicalRequest = "POST\n/\n\n{$canonicalHeaders}\n{$signedHeaders}\n{$payloadHash}";
+
+        $algorithm = 'AWS4-HMAC-SHA256';
+        $credentialScope = "{$dateStamp}/{$region}/{$service}/aws4_request";
+        $stringToSign = "{$algorithm}\n{$amzDate}\n{$credentialScope}\n" . hash('sha256', $canonicalRequest);
+
+        $kSecret = 'AWS4' . $creds['secret_key'];
+        $kDate = hash_hmac('sha256', $dateStamp, $kSecret, true);
+        $kRegion = hash_hmac('sha256', $region, $kDate, true);
+        $kService = hash_hmac('sha256', $service, $kRegion, true);
+        $kSigning = hash_hmac('sha256', 'aws4_request', $kService, true);
+        $signature = hash_hmac('sha256', $stringToSign, $kSigning);
+
+        $authorizationHeader = "{$algorithm} Credential={$creds['access_key']}/{$credentialScope}, SignedHeaders={$signedHeaders}, Signature={$signature}";
+
+        $httpHeaders = [
+            "Content-Type: application/x-www-form-urlencoded; charset=utf-8",
+            "X-Amz-Date: {$amzDate}",
+            "Authorization: {$authorizationHeader}",
+        ];
+        if (!empty($creds['token'])) {
+            $httpHeaders[] = "X-Amz-Security-Token: {$creds['token']}";
+        }
+
+        $ch = curl_init($endpoint);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_HTTPHEADER => $httpHeaders,
+            CURLOPT_TIMEOUT => 5,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($httpCode >= 200 && $httpCode < 300) {
+            preg_match('/<MessageId>(.*?)<\/MessageId>/', (string)$response, $m);
+            return [
+                'success' => true,
+                'service' => 'Amazon SNS',
+                'message_id' => $m[1] ?? 'sns-api-ok',
+            ];
+        }
+
+        return [
+            'success' => false,
+            'service' => 'Amazon SNS',
+            'error' => "HTTP {$httpCode}: " . ($response ?: $curlError),
+        ];
+    }
+
+    /**
+     * Fallback publikasi SNS via AWS CLI
+     */
+    private static function sendViaSnsAwsCli(
+        string $region,
+        string $topicArn,
+        string $subject,
+        string $messageText
+    ): array {
+        $checkCli = (DIRECTORY_SEPARATOR === '\\') ? 'where aws 2>nul' : 'command -v aws 2>/dev/null';
+        $hasAws = shell_exec($checkCli);
+        if (!$hasAws) {
+            return ['success' => false, 'error' => 'AWS CLI not found'];
+        }
+
+        $cmd = sprintf(
+            'aws sns publish --region %s --topic-arn %s --subject %s --message %s 2>&1',
+            escapeshellarg($region),
+            escapeshellarg($topicArn),
+            escapeshellarg(substr($subject, 0, 100)),
+            escapeshellarg($messageText)
+        );
+
+        $output = shell_exec($cmd);
+        if ($output && (str_contains($output, 'MessageId') || str_contains($output, '"MessageId"'))) {
+            $data = json_decode((string)$output, true);
+            return [
+                'success' => true,
+                'service' => 'Amazon SNS',
+                'message_id' => $data['MessageId'] ?? trim($output)
+            ];
+        }
+
+        return ['success' => false, 'service' => 'Amazon SNS', 'error' => trim((string)$output)];
     }
 
     /**

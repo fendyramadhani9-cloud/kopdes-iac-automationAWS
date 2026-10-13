@@ -74,10 +74,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send_
     $emailResult = SesMailer::sendReportEmail($summaryPayload);
     if (!empty($emailResult['success'])) {
         $dest = $emailResult['recipient'] ?? env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id');
-        flash('success', "Rekapitulasi laporan ekonomi berhasil dikirim ke {$dest} via Amazon SES.");
+        $serviceName = $emailResult['service'] ?? 'Amazon SES';
+        flash('success', "Rekapitulasi laporan ekonomi berhasil dikirim ke {$dest} via {$serviceName}.");
     } else {
-        $err = $emailResult['error'] ?? 'Terjadi kesalahan pada layanan Amazon SES.';
-        flash('error', "Gagal mengirim email via Amazon SES: {$err} (Catatan: Seluruh data laporan tetap aman di sistem).");
+        $err = $emailResult['error'] ?? 'Terjadi kesalahan pada layanan Amazon SES/SNS.';
+        flash('error', "Gagal mengirim email/notifikasi: {$err} (Catatan: Seluruh data laporan tetap aman di sistem).");
     }
     redirect('index.php?page=reports');
 }
