@@ -19,7 +19,7 @@ class SesMailer {
      * Kirim email rekapitulasi laporan ekonomi via Amazon SES
      */
     public static function sendReportEmail(array $reportSummary, ?string $recipient = null): array {
-        $region = env('AWS_REGION', env('SES_REGION', 'ap-southeast-1'));
+        $region = env('AWS_REGION', env('SES_REGION', 'us-east-1'));
         $sender = env('SES_SENDER_EMAIL', 'noreply@kopdes.id');
         $recipient = $recipient ?: env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id');
         $sesEnabled = filter_var(env('SES_ENABLED', true), FILTER_VALIDATE_BOOLEAN);

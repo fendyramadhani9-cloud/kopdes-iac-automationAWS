@@ -29,7 +29,7 @@ return [
     // Konfigurasi Amazon SES
     'ses' => [
         'enabled' => filter_var(env('SES_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
-        'region' => env('AWS_REGION', env('SES_REGION', 'ap-southeast-1')),
+        'region' => env('AWS_REGION', env('SES_REGION', 'us-east-1')),
         'sender' => env('SES_SENDER_EMAIL', 'noreply@kopdes.id'),
         'recipient' => env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id'),
     ],
