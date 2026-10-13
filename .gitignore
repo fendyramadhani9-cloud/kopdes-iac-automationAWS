@@ -1,0 +1,29 @@
+# Environment & Local Secrets
+.env
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfplan
+
+# Ansible
+ansible/*.retry
+ansible/.ansible/
+
+# SQLite Databases & Local Test Artifacts
+database/*.sqlite
+database/*.sqlite3
+database/*.db
+database/*.sqlite-journal
+tests/*.txt
+tests/*_cookie*.txt
+
+# Operating System & IDE
+.DS_Store
+Thumbs.db
+*.log
+logs/
+.vscode/
+.idea/
