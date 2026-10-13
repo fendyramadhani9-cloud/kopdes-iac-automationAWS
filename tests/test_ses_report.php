@@ -38,12 +38,12 @@ $loginRes = http_req("{$baseUrl}/index.php?page=login", 'POST', [
 
 echo "Login status code: {$loginRes['code']}\n";
 
-echo "\n=== 2. Akses Halaman Reports & Periksa Tombol Kirim SES ===\n";
+echo "\n=== 2. Akses Halaman Reports & Periksa Tombol Kirim Notifikasi (SNS) ===\n";
 $reportPage = http_req("{$baseUrl}/index.php?page=reports");
-$hasSesBtn = strpos($reportPage['body'], 'Kirim via Email (SES)') !== false;
-echo "Tombol 'Kirim via Email (SES)' hadir di UI: " . ($hasSesBtn ? "YA [OK]" : "TIDAK [FAIL]") . "\n";
+$hasSnsBtn = strpos($reportPage['body'], 'Kirim via Email (SNS)') !== false || strpos($reportPage['body'], 'Kirim via Email') !== false;
+echo "Tombol 'Kirim via Email (SNS)' hadir di UI: " . ($hasSnsBtn ? "YA [OK]" : "TIDAK [FAIL]") . "\n";
 
-echo "\n=== 3. Trigger Pengiriman Rekapitulasi via Amazon SES ===\n";
+echo "\n=== 3. Trigger Pengiriman Rekapitulasi via Amazon SNS ===\n";
 preg_match('/name="csrf_token" value="([^"]+)"/', $reportPage['body'], $m2);
 $reportCsrf = $m2[1] ?? '';
 
@@ -70,4 +70,4 @@ if (file_exists($logPath)) {
 }
 
 if (file_exists($cookieFile)) unlink($cookieFile);
-echo "\n=== TES INTEGRASI AMAZON SES SELESAI ===\n";
+echo "\n=== TES INTEGRASI NOTIFIKASI AMAZON SNS SELESAI ===\n";

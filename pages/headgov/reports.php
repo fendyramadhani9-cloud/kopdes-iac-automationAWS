@@ -73,12 +73,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send_
 
     $emailResult = SesMailer::sendReportEmail($summaryPayload);
     if (!empty($emailResult['success'])) {
-        $dest = $emailResult['recipient'] ?? env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id');
-        $serviceName = $emailResult['service'] ?? 'Amazon SES';
+        $dest = $emailResult['recipient'] ?? env('SNS_RECIPIENT_EMAIL', env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id'));
+        $serviceName = $emailResult['service'] ?? 'Amazon SNS';
         flash('success', "Rekapitulasi laporan ekonomi berhasil dikirim ke {$dest} via {$serviceName}.");
     } else {
-        $err = $emailResult['error'] ?? 'Terjadi kesalahan pada layanan Amazon SES/SNS.';
-        flash('error', "Gagal mengirim email/notifikasi: {$err} (Catatan: Seluruh data laporan tetap aman di sistem).");
+        $err = $emailResult['error'] ?? 'Terjadi kesalahan pada layanan Amazon SNS.';
+        flash('error', "Gagal mengirim notifikasi laporan: {$err} (Catatan: Seluruh data laporan tetap aman di sistem).");
     }
     redirect('index.php?page=reports');
 }
@@ -96,9 +96,9 @@ require __DIR__ . '/../../includes/layout/header.php';
         <form method="POST" action="index.php?page=reports" style="display:inline;margin:0;">
             <?= csrf_field() ?>
             <input type="hidden" name="action" value="send_email">
-            <button type="submit" class="btn btn-primary btn-sm" title="Kirim rekapitulasi laporan ke email administrator melalui Amazon SES">
+            <button type="submit" class="btn btn-primary btn-sm" title="Kirim rekapitulasi laporan ke email administrator melalui Amazon SNS">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-                <span>Kirim via Email (SES)</span>
+                <span>Kirim via Email (SNS)</span>
             </button>
         </form>
         <button type="button" class="btn btn-secondary btn-sm" onclick="window.print()">

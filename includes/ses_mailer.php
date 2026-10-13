@@ -16,73 +16,42 @@ class SesMailer {
     private static string $logFile = __DIR__ . '/../logs/email.log';
 
     /**
-     * Kirim email rekapitulasi laporan ekonomi via Amazon SES atau Amazon SNS
+     * Kirim email rekapitulasi laporan ekonomi langsung via Amazon SNS Topic
      */
     public static function sendReportEmail(array $reportSummary, ?string $recipient = null): array {
-        $region = env('AWS_REGION', env('SES_REGION', 'us-east-1'));
-        $sender = env('SES_SENDER_EMAIL', 'noreply@kopdes.id');
-        $recipient = $recipient ?: env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id');
-        $sesEnabled = filter_var(env('SES_ENABLED', true), FILTER_VALIDATE_BOOLEAN);
+        $region = env('AWS_REGION', 'us-east-1');
+        $recipient = $recipient ?: env('SNS_RECIPIENT_EMAIL', env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id'));
         $snsTopicArn = env('SNS_TOPIC_ARN', null);
 
         $subject = "[KopDes Merah Putih] Rekapitulasi Laporan Ekonomi Wilayah - " . date('d M Y');
-        
-        $htmlBody = self::buildReportHtml($reportSummary);
         $textBody = self::buildReportText($reportSummary);
 
-        // Jika SES dinonaktifkan namun SNS_TOPIC_ARN tersedia, kirim via Amazon SNS
-        if (!$sesEnabled && !empty($snsTopicArn)) {
-            self::logAction("INFO", "SES disabled but SNS_TOPIC_ARN detected. Dispatching via Amazon SNS.");
-            return self::dispatchSnsEmail($region, $snsTopicArn, $subject, $textBody, $recipient);
-        }
-
-        // Jika SES tidak diaktifkan, jalankan mode simulasi aman
-        if (!$sesEnabled) {
-            self::logAction("SIMULATION", "SES disabled via SES_ENABLED=false. Email to {$recipient} logged only.");
-            return [
-                'success' => true,
-                'mode' => 'simulation',
-                'service' => 'Simulation',
-                'message' => "Simulasi: Email laporan berhasil dibuat dan dicatat (SES_ENABLED=false).",
-                'recipient' => $recipient
-            ];
-        }
-
-        // Coba kirim via AWS SES (REST API / SigV4 atau AWS CLI)
-        try {
-            $result = self::dispatchSesEmail($region, $sender, $recipient, $subject, $htmlBody, $textBody);
-            if ($result['success']) {
-                $result['service'] = 'Amazon SES';
-                self::logAction("SUCCESS", "Report email sent to {$recipient} via Amazon SES ({$region}). MessageId: " . ($result['message_id'] ?? 'N/A'));
+        // Jika SNS_TOPIC_ARN tersedia, kirim langsung via Amazon SNS Topic
+        if (!empty($snsTopicArn)) {
+            try {
+                $result = self::dispatchSnsEmail($region, $snsTopicArn, $subject, $textBody, $recipient);
                 return $result;
+            } catch (Throwable $e) {
+                $safeError = $e->getMessage();
+                self::logAction("EXCEPTION", "Exception publishing report to SNS: {$safeError}");
+                return [
+                    'success' => false,
+                    'error' => $safeError,
+                    'recipient' => $recipient
+                ];
             }
-
-            // Fallback otomatis ke Amazon SNS jika SES gagal (misal dibatasi di AWS Academy sandbox)
-            if (!empty($snsTopicArn)) {
-                self::logAction("FALLBACK_SNS", "Amazon SES failed (" . ($result['error'] ?? 'unspecified') . "). Falling back to Amazon SNS Topic: {$snsTopicArn}");
-                $snsResult = self::dispatchSnsEmail($region, $snsTopicArn, $subject, $textBody, $recipient);
-                if ($snsResult['success']) {
-                    return $snsResult;
-                }
-            }
-
-            self::logAction("ERROR", "Failed to send email to {$recipient}: " . ($result['error'] ?? 'Unknown'));
-            return $result;
-        } catch (Throwable $e) {
-            $safeError = $e->getMessage();
-            self::logAction("EXCEPTION", "Exception sending email to {$recipient}: {$safeError}");
-
-            if (!empty($snsTopicArn)) {
-                self::logAction("FALLBACK_SNS", "Attempting Amazon SNS after SES exception: {$safeError}");
-                return self::dispatchSnsEmail($region, $snsTopicArn, $subject, $textBody, $recipient);
-            }
-
-            return [
-                'success' => false,
-                'error' => $safeError,
-                'recipient' => $recipient
-            ];
         }
+
+        // Jika SNS_TOPIC_ARN belum dikonfigurasi, jalankan mode simulasi aman / lokal
+        self::logAction("SIMULATION", "SNS_TOPIC_ARN not set. Report to {$recipient} simulated locally.");
+        return [
+            'success' => true,
+            'mode' => 'simulation',
+            'service' => 'Amazon SNS (Simulated)',
+            'message' => "Simulasi: Email laporan berhasil dibuat dan dicatat via SNS.",
+            'recipient' => $recipient,
+            'message_id' => 'sns-sim-' . bin2hex(random_bytes(8))
+        ];
     }
 
     /**
@@ -634,12 +603,12 @@ class SesMailer {
             $out .= sprintf("- %s | %s | %s transaksi\n", $name, $turn, $tx);
         }
 
-        $out .= "\n---\nDikirimkan secara otomatis melalui Amazon SES.\n";
+        $out .= "\n---\nDikirimkan secara otomatis melalui Amazon SNS.\n";
         return $out;
     }
 
     /**
-     * Catat log pengiriman email secara aman (tanpa kredensial/rahasia)
+     * Catat log pengiriman notifikasi secara aman (tanpa kredensial/rahasia)
      */
     private static function logAction(string $status, string $message): void {
         $logDir = dirname(self::$logFile);
@@ -650,3 +619,8 @@ class SesMailer {
         @file_put_contents(self::$logFile, $line, FILE_APPEND);
     }
 }
+
+// Alias untuk fleksibilitas kode
+class_alias('SesMailer', 'SnsMailer');
+class_alias('SesMailer', 'NotificationService');
+

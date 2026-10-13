@@ -26,17 +26,11 @@ return [
         'alb_dns' => env('ALB_DNS_NAME', null),
     ],
 
-    // Konfigurasi Amazon SES
-    'ses' => [
-        'enabled' => filter_var(env('SES_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
-        'region' => env('AWS_REGION', env('SES_REGION', 'us-east-1')),
-        'sender' => env('SES_SENDER_EMAIL', 'noreply@kopdes.id'),
-        'recipient' => env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id'),
-    ],
-
-    // Konfigurasi Amazon SNS (Alternatif Notifikasi AWS Academy Learner Lab)
+    // Konfigurasi Notifikasi Amazon SNS (100% AWS Academy Learner Lab Ready)
     'sns' => [
         'topic_arn' => env('SNS_TOPIC_ARN', null),
+        'region' => env('AWS_REGION', 'us-east-1'),
+        'recipient' => env('SNS_RECIPIENT_EMAIL', env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id')),
     ],
 
     // Versi Aplikasi
