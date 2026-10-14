@@ -22,7 +22,7 @@ if (!function_exists('current_user')) {
             return null;
         }
 
-        // Simpan cache user di session untuk performa tinggi di Alpine Linux / PHP-FPM
+        // Simpan cache user di session untuk performa tinggi di Ubuntu 24.04 LTS / PHP-FPM
         return $_SESSION['user_data'] ?? [
             'id' => $_SESSION['user_id'],
             'name' => $_SESSION['user_name'] ?? 'User',
