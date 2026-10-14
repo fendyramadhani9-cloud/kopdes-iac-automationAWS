@@ -56,6 +56,21 @@ output("Koneksi berhasil! (Latency: " . Database::getLatency() . " ms)", 'succes
 
 $connection = env('DB_CONNECTION', 'mysql');
 
+$lockAcquired = false;
+if ($connection === 'mysql') {
+    try {
+        $lockStmt = $pdo->query("SELECT GET_LOCK('kopdes_db_init_lock', 60)");
+        $lockAcquired = ($lockStmt && (int)$lockStmt->fetchColumn() === 1);
+        if ($lockAcquired) {
+            output("Berhasil memperoleh MySQL advisory lock (kopdes_db_init_lock).", 'info');
+        } else {
+            output("Menunggu atau gagal memperoleh MySQL advisory lock (kopdes_db_init_lock).", 'warning');
+        }
+    } catch (\Throwable $e) {
+        output("Advisory lock tidak dapat diaktifkan: " . $e->getMessage(), 'warning');
+    }
+}
+
 if ($connection === 'sqlite') {
     output("Mode SQLite terdeteksi. Membuat tabel kompatibel SQLite...", 'info');
     
@@ -617,7 +632,14 @@ foreach ($defaultTransactions as $t) {
 output("Tabel memberships, products, dan transactions berhasil disinkronkan!", 'success');
 
 $totalKopdesFinal = (int)$pdo->query("SELECT COUNT(*) FROM kopdes")->fetchColumn();
-output("Total KopDes aktif saat ini: {$totalKopdesFinal} unit (15 slot awal Banyumas tersinkronisasi tanpa duplikat).", 'success');
+if ($connection === 'mysql' && $lockAcquired) {
+    try {
+        $pdo->exec("SELECT RELEASE_LOCK('kopdes_db_init_lock')");
+        output("MySQL advisory lock (kopdes_db_init_lock) berhasil dilepaskan.", 'info');
+    } catch (\Throwable $e) {
+        // ignore
+    }
+}
 
 output("Proses inisialisasi database KopDes selesai dengan sukses!", 'success');
 if (!$isCli) {
