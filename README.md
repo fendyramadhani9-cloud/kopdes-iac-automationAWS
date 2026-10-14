@@ -1,4 +1,4 @@
-# kopdes-iac-automationAWS — Platform Koperasi Desa (KopDes) Merah Putih
+# KopDes Merah Putih — Platform Koperasi Desa Digital (Web Application)
 
 Platform aplikasi web digital multi-role untuk tata kelola Koperasi Desa (KopDes) Merah Putih, rantai pasok komoditas pangan desa, keanggotaan warga, transaksi kasir Point of Sale (POS), dan laporan ringkasan ekonomi terintegrasi.
 
