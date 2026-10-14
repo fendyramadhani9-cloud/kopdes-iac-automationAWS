@@ -2,20 +2,10 @@
 -- KopDes - Database Schema (MariaDB / MySQL)
 -- =====================================================
 
-SET FOREIGN_KEY_CHECKS = 0;
-
-DROP TABLE IF EXISTS `transactions`;
-DROP TABLE IF EXISTS `products`;
-DROP TABLE IF EXISTS `memberships`;
-DROP TABLE IF EXISTS `kopdes`;
-DROP TABLE IF EXISTS `users`;
-
-SET FOREIGN_KEY_CHECKS = 1;
-
 -- -----------------------------------------------------
 -- Table `users`
 -- -----------------------------------------------------
-CREATE TABLE `users` (
+CREATE TABLE IF NOT EXISTS `users` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(100) NOT NULL,
   `email` VARCHAR(120) NOT NULL UNIQUE,
@@ -33,7 +23,7 @@ CREATE TABLE `users` (
 -- -----------------------------------------------------
 -- Table `kopdes`
 -- -----------------------------------------------------
-CREATE TABLE `kopdes` (
+CREATE TABLE IF NOT EXISTS `kopdes` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(150) NOT NULL,
   `location` VARCHAR(150) NOT NULL,
@@ -60,7 +50,7 @@ CREATE TABLE `kopdes` (
 -- -----------------------------------------------------
 -- Table `memberships`
 -- -----------------------------------------------------
-CREATE TABLE `memberships` (
+CREATE TABLE IF NOT EXISTS `memberships` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `kopdes_id` INT UNSIGNED NOT NULL,
   `user_id` INT UNSIGNED NOT NULL,
@@ -81,7 +71,7 @@ CREATE TABLE `memberships` (
 -- -----------------------------------------------------
 -- Table `products`
 -- -----------------------------------------------------
-CREATE TABLE `products` (
+CREATE TABLE IF NOT EXISTS `products` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `kopdes_id` INT UNSIGNED NOT NULL,
   `name` VARCHAR(150) NOT NULL,
@@ -105,7 +95,7 @@ CREATE TABLE `products` (
 -- -----------------------------------------------------
 -- Table `transactions`
 -- -----------------------------------------------------
-CREATE TABLE `transactions` (
+CREATE TABLE IF NOT EXISTS `transactions` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `invoice_code` VARCHAR(50) NOT NULL UNIQUE,
   `kopdes_id` INT UNSIGNED NOT NULL,

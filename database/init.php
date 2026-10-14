@@ -170,11 +170,23 @@ if ($connection === 'sqlite') {
         exit(1);
     }
 
-    output("Mengeksekusi database/schema.sql ke MariaDB...", 'info');
-    $sql = file_get_contents($schemaFile);
     try {
-        $pdo->exec($sql);
-        output("Struktur tabel schema.sql berhasil dibuat!", 'success');
+        $tableExists = false;
+        try {
+            $checkTable = $pdo->query("SHOW TABLES LIKE 'users'")->fetch();
+            $tableExists = !empty($checkTable);
+        } catch (PDOException $e) {
+            $tableExists = false;
+        }
+
+        if ($tableExists) {
+            output("Tabel database inti (users) sudah ada di MariaDB/MySQL. Melewati pembuatan ulang skema DDL.", 'info');
+        } else {
+            output("Mengeksekusi database/schema.sql ke MariaDB/MySQL...", 'info');
+            $sql = file_get_contents($schemaFile);
+            $pdo->exec($sql);
+            output("Struktur tabel schema.sql berhasil dibuat!", 'success');
+        }
 
         // Pastikan kolom geospasial ada jika tabel sudah ada sebelumnya
         $existingCols = [];
