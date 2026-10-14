@@ -13,7 +13,16 @@ Platform aplikasi web digital multi-role untuk tata kelola Koperasi Desa (KopDes
 - **Katalog Komoditas & POS Kasir**: Pencatatan transaksi real-time dengan kode invoice otomatis.
 - **Geospasial & Peta Wilayah**: Visualisasi sebaran unit KopDes di peta interaktif Banyumas dan seluruh Indonesia berbasis OpenStreetMap & Leaflet.js.
 - **Cloud-Ready Configuration**: Mendukung koneksi database MySQL terpusat (Amazon RDS) maupun SQLite lokal, dengan deteksi env otomatis via `.env`.
-- **Integrasi Email Notifikasi**: Didukung modul pelaporan ekonomi via Amazon Simple Email Service (SES).
+- **Integrasi Notifikasi Laporan**: Didukung modul pelaporan ekonomi via **Amazon Simple Notification Service (SNS)** yang 100% kompatibel dengan AWS Academy Learner Lab.
+
+---
+
+## Deployment Cloud (IaC Automation)
+
+Aplikasi web KopDes ini dirancang untuk di-deploy secara otomatis ke arsitektur **AWS Native** berbasis **Ubuntu 24.04 LTS (Noble Numbat)**, Auto Scaling Group (ASG), Application Load Balancer (ALB), dan Amazon RDS MySQL menggunakan **Terraform** dan **Ansible**.
+
+Seluruh kode otomasi infrastruktur cloud, script bootstrap, template IaC, dan panduan langkah-demi-langkah tersedia di repository:
+👉 **[terraform-ansible-automated-lab](https://github.com/fendyramadhani9-cloud/terraform-ansible-automated-lab)** (Panduan Lengkap: [TUTORIAL.md](https://github.com/fendyramadhani9-cloud/terraform-ansible-automated-lab/blob/main/TUTORIAL.md))
 
 ---
 
