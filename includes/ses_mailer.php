@@ -322,34 +322,50 @@ class SesMailer {
         string $messageText,
         ?string $recipient = null
     ): array {
-        $recipient = $recipient ?: env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id');
+        $lastError = '';
 
         // 1. Coba ambil IAM role credentials dari EC2 IMDSv2
         $credentials = self::getEc2IamCredentials();
         if ($credentials) {
             $apiResult = self::sendViaSnsRestApi($region, $topicArn, $subject, $messageText, $credentials);
-            if ($apiResult['success']) {
+            if (!empty($apiResult['success'])) {
                 $apiResult['recipient'] = $recipient;
                 self::logAction("SUCCESS", "Report published to Amazon SNS Topic {$topicArn} via REST API. MessageId: " . ($apiResult['message_id'] ?? 'N/A'));
                 return $apiResult;
             }
+            $lastError = $apiResult['error'] ?? 'Gagal publikasi via IMDSv2 SigV4';
         }
 
         // 2. Coba fallback via AWS CLI jika terpasang
         $cliResult = self::sendViaSnsAwsCli($region, $topicArn, $subject, $messageText);
-        if ($cliResult['success']) {
+        if (!empty($cliResult['success'])) {
             $cliResult['recipient'] = $recipient;
             self::logAction("SUCCESS", "Report published to Amazon SNS Topic {$topicArn} via AWS CLI. MessageId: " . ($cliResult['message_id'] ?? 'N/A'));
             return $cliResult;
         }
+        if (!empty($cliResult['error']) && $cliResult['error'] !== 'AWS CLI not found') {
+            $lastError = $cliResult['error'];
+        }
 
-        // 3. Fallback lingkungan lokal/simulasi jika tanpa kredensial AWS aktif
-        self::logAction("FALLBACK", "No AWS IAM/CLI credentials detected for SNS. Report simulated for SNS Topic: {$topicArn}.");
+        // 3. Jika berjalan pada lingkungan produksi AWS atau kredensial ada tapi gagal publikasi, laporkan gagal nyata
+        $isAwsEnvironment = ($credentials !== null) || (env('APP_ENV') === 'production');
+        if ($isAwsEnvironment && !empty($lastError)) {
+            self::logAction("ERROR", "AWS SNS Publish failed: {$lastError}");
+            return [
+                'success' => false,
+                'error' => $lastError,
+                'recipient' => $recipient,
+                'service' => 'Amazon SNS'
+            ];
+        }
+
+        // 4. Fallback lingkungan lokal/simulasi jika murni offline tanpa kredensial AWS aktif
+        self::logAction("SIMULATION", "No AWS IAM/CLI credentials detected on local host. Report simulated for SNS Topic: {$topicArn}.");
         return [
             'success' => true,
-            'mode' => 'local_fallback',
+            'mode' => 'simulation',
             'service' => 'Amazon SNS (Simulated)',
-            'message' => "Laporan berhasil dipublikasikan ke topik notifikasi Amazon SNS (Lingkungan lokal/pengujian non-AWS).",
+            'message' => "Laporan berhasil dicatat dalam mode simulasi lokal.",
             'recipient' => $recipient,
             'topic_arn' => $topicArn,
             'message_id' => 'sns-sim-' . bin2hex(random_bytes(8))
@@ -568,7 +584,7 @@ class SesMailer {
                     </table>
                     
                     <div style='margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;text-align:center;'>
-                        Email ini dikirimkan secara otomatis oleh sistem <strong>KopDes Merah Putih</strong> melalui <strong>Amazon SES</strong>.
+                        Email ini dikirimkan secara otomatis oleh sistem <strong>KopDes Merah Putih</strong> melalui <strong>Amazon SNS</strong>.
                     </div>
                 </div>
             </div>

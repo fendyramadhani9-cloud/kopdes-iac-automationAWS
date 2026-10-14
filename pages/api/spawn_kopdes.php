@@ -110,8 +110,9 @@ try {
     ], 201);
 
 } catch (PDOException $e) {
+    error_log("Spawn KopDes error: " . $e->getMessage());
     json_response([
         'success' => false,
-        'message' => 'Gagal menyimpan KopDes ke database: ' . $e->getMessage()
+        'message' => 'Gagal menyimpan unit KopDes akibat kendala sistem. Silakan coba kembali.'
     ], 500);
 }

@@ -12,25 +12,27 @@ require_once __DIR__ . '/../config/database.php';
 
 $isCli = (php_sapi_name() === 'cli');
 
-function output(string $message, string $type = 'info'): void {
-    global $isCli;
-    $time = date('H:i:s');
-    if ($isCli) {
-        $prefix = match($type) {
-            'success' => "\033[32m[OK]\033[0m",
-            'error'   => "\033[31m[ERROR]\033[0m",
-            'warning' => "\033[33m[WARN]\033[0m",
-            default   => "\033[34m[INFO]\033[0m",
-        };
-        echo "{$prefix} {$time} - {$message}\n";
-    } else {
-        $color = match($type) {
-            'success' => '#10b981',
-            'error'   => '#ef4444',
-            'warning' => '#f59e0b',
-            default   => '#0284c7',
-        };
-        echo "<div style='font-family: monospace; margin: 4px 0; color: {$color};'>[{$time}] {$message}</div>";
+if (!function_exists('output')) {
+    function output(string $message, string $type = 'info'): void {
+        global $isCli;
+        $time = date('H:i:s');
+        if ($isCli) {
+            $prefix = match($type) {
+                'success' => "\033[32m[OK]\033[0m",
+                'error'   => "\033[31m[ERROR]\033[0m",
+                'warning' => "\033[33m[WARN]\033[0m",
+                default   => "\033[34m[INFO]\033[0m",
+            };
+            echo "{$prefix} {$time} - {$message}\n";
+        } else {
+            $color = match($type) {
+                'success' => '#10b981',
+                'error'   => '#ef4444',
+                'warning' => '#f59e0b',
+                default   => '#0284c7',
+            };
+            echo "<div style='font-family: monospace; margin: 4px 0; color: {$color};'>[{$time}] {$message}</div>";
+        }
     }
 }
 
@@ -508,55 +510,32 @@ while ($r = $chkK->fetch(PDO::FETCH_ASSOC)) {
     $existingKopdesMap[$r['id']] = $r;
 }
 
-// Hapus record sementara hasil automated test sebelumnya jika ada (id > 15 atau id 5-12 duplikat test)
-if ($connection === 'sqlite') {
-    // Di SQLite, bersihkan hanya id test yang bukan merupakan slot resmi 1-15
-    $pdo->exec("DELETE FROM kopdes WHERE id > 15");
-}
-
+// Sinkronisasi dataset awal: gunakan skema non-destruktif (INSERT IGNORE) tanpa menghapus unit custom
 foreach ($kopdesDataset as $kItem) {
     $targetId = $kItem['id'];
     if (isset($existingKopdesMap[$targetId])) {
-        // Pertahankan name & description bila slot 1 atau 2 sudah memiliki nilai khas, tetapi pastikan kolom geo & koordinat terisi
-        $currentName = $existingKopdesMap[$targetId]['name'];
-        $finalName = ($targetId <= 2) ? $currentName : $kItem['name'];
-        if ($targetId === 1 && !str_contains($currentName, 'Pajerukan')) {
-            $finalName = 'KopDes Berkah Tani Pajerukan';
-        }
-        if ($targetId === 2 && (str_contains(strtolower($currentName), 'klahar') || !str_contains($currentName, 'KopDes Wlahar'))) {
-            $finalName = 'KopDes Wlahar Wetan Mandiri';
-        }
-
+        // Jangan timpa nama/lokasi jika sudah ada; hanya lengkapi koordinat/geo jika masih kosong
         $upStmt = $pdo->prepare("
             UPDATE kopdes SET
-                name = ?,
-                location = ?,
-                village_name = ?,
-                district_name = ?,
-                regency_name = ?,
-                province_name = ?,
-                latitude = ?,
-                longitude = ?,
-                description = COALESCE(description, ?),
-                manager_id = ?,
-                status = 'active'
-            WHERE id = ?
+                village_name = COALESCE(village_name, ?),
+                district_name = COALESCE(district_name, ?),
+                regency_name = COALESCE(regency_name, ?),
+                province_name = COALESCE(province_name, ?),
+                latitude = COALESCE(latitude, ?),
+                longitude = COALESCE(longitude, ?)
+            WHERE id = ? AND (latitude IS NULL OR longitude IS NULL)
         ");
         $upStmt->execute([
-            $finalName,
-            $kItem['location'],
             $kItem['village_name'],
             $kItem['district_name'],
             $kItem['regency_name'],
             $kItem['province_name'],
             $kItem['latitude'],
             $kItem['longitude'],
-            $kItem['description'],
-            $kItem['manager_id'],
             $targetId
         ]);
     } else {
-        // Insert baru
+        // Insert unit baru jika slot belum terisi
         $insStmt = $pdo->prepare("
             INSERT INTO kopdes (id, name, location, village_name, district_name, regency_name, province_name, latitude, longitude, description, manager_id, status, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -580,9 +559,9 @@ foreach ($kopdesDataset as $kItem) {
 }
 
 // -----------------------------------------------------
-// SEED MEMBERSHIPS, PRODUCTS, TRANSACTIONS (AUDIT-010)
+// SEED MEMBERSHIPS, PRODUCTS, TRANSACTIONS (NON-DESTRUCTIVE)
 // -----------------------------------------------------
-output("Memeriksa dan menyinkronkan data seed memberships, products, dan transactions...", 'info');
+output("Memeriksa dan menyinkronkan data seed memberships, products, dan transactions secara aman...", 'info');
 
 $defaultMemberships = [
     [1, 1, 5, 'KOP01-20250001', 'active', '2025-01-19 09:00:00'],
@@ -623,13 +602,13 @@ foreach ($defaultMemberships as $m) {
     $stmtMem->execute($m);
 }
 
+// Pastikan produk awal hanya ditambahkan jika belum ada, tanpa menimpa perubahan harga/stok yang sudah dilakukan user
 $stmtPrd = $pdo->prepare("{$insertKeyword} INTO products (id, kopdes_id, name, sku, category, price, stock, unit, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-$stmtPrdUp = $pdo->prepare("UPDATE products SET name = ?, sku = ?, category = ?, price = ?, unit = ? WHERE id = ?");
 foreach ($defaultProducts as $p) {
     $stmtPrd->execute($p);
-    $stmtPrdUp->execute([$p[2], $p[3], $p[4], $p[5], $p[7], $p[0]]);
 }
 
+// Pastikan transaksi demo hanya ditambahkan jika belum ada, tanpa mereset riwayat transaksi pengguna
 $stmtTx = $pdo->prepare("{$insertKeyword} INTO transactions (id, invoice_code, kopdes_id, user_id, product_id, type, quantity, total_amount, status, notes, transaction_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 foreach ($defaultTransactions as $t) {
     $stmtTx->execute($t);

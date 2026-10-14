@@ -54,7 +54,7 @@ $haproxyStatus = $nodeInfo['haproxy_status'];
 $isAwsEnv = !empty(env('AWS_REGION')) || !empty(env('ALB_DNS_NAME')) || str_contains(env('DB_HOST', ''), 'rds.amazonaws.com');
 $lbSoftwareName = $isAwsEnv ? 'AWS Application Load Balancer (ALB)' : 'HAProxy';
 $lbEndpointDisplay = env('ALB_DNS_NAME', $haproxyIp);
-$webRuntimeLabel = $isAwsEnv ? 'PHP 8.2 / Nginx & systemd (Amazon Linux 2023)' : 'PHP Web Server & OpenRC (Alpine Linux)';
+$webRuntimeLabel = $isAwsEnv ? 'PHP 8.3 / Nginx & systemd (Ubuntu 24.04 LTS)' : 'PHP Web Server & OpenRC (Alpine Linux)';
 
 require __DIR__ . '/../../includes/layout/header.php';
 ?>

@@ -121,7 +121,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($pdo && $pdo->inTransaction()) {
                     $pdo->rollBack();
                 }
-                $error = 'Terjadi kesalahan sistem saat menyimpan data: ' . $e->getMessage();
+                error_log("Registration error: " . $e->getMessage());
+                $error = 'Terjadi kesalahan sistem saat memproses pendaftaran. Silakan coba kembali beberapa saat lagi.';
             }
         }
     }

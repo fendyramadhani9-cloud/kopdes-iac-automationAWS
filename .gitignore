@@ -1,12 +1,8 @@
 # Environment & Local Secrets
 .env
 
-# Terraform
-terraform/.terraform/
-terraform/.terraform.lock.hcl
-terraform/*.tfstate
-terraform/*.tfstate.*
-terraform/*.tfplan
+# Terraform (IaC repository artifacts)
+terraform/
 
 # Ansible
 ansible/*.retry

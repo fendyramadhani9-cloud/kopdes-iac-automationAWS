@@ -33,7 +33,17 @@ $type = $_POST['type'] ?? 'purchase';
 $notes = trim($_POST['notes'] ?? '');
 
 // Jika role CITIZEN, user_id adalah dirinya sendiri
-$userId = ($user['role'] === 'CITIZEN') ? $user['id'] : (int)($_POST['user_id'] ?? $user['id']);
+$userId = ($user['role'] === 'CITIZEN') ? (int)$user['id'] : (int)($_POST['user_id'] ?? $user['id']);
+
+// Validasi identitas pengguna transaksi jika dimasukkan oleh Manager/Admin
+if ($user['role'] !== 'CITIZEN' && $userId !== (int)$user['id']) {
+    $stmtUserCheck = $pdo->prepare("SELECT id FROM users WHERE id = ?");
+    $stmtUserCheck->execute([$userId]);
+    if (!$stmtUserCheck->fetch()) {
+        flash('error', 'Pengguna yang dipilih untuk transaksi tidak valid.');
+        redirect($_SERVER['HTTP_REFERER'] ?? 'index.php?page=transactions');
+    }
+}
 
 // Ambil info produk
 $stmtProd = $pdo->prepare("SELECT id, kopdes_id, name, price, stock, status FROM products WHERE id = ?");
@@ -114,7 +124,8 @@ try {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    flash('error', 'Gagal memproses transaksi: ' . $e->getMessage());
+    error_log("Transaction processing error: " . $e->getMessage());
+    flash('error', 'Gagal memproses transaksi akibat kendala sistem. Silakan coba kembali beberapa saat lagi.');
 }
 
 redirect('index.php?page=transactions');

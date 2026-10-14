@@ -74,11 +74,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send_
     $emailResult = SesMailer::sendReportEmail($summaryPayload);
     if (!empty($emailResult['success'])) {
         $dest = $emailResult['recipient'] ?? env('SNS_RECIPIENT_EMAIL', env('SES_RECIPIENT_EMAIL', 'admin@kopdes.id'));
-        $serviceName = $emailResult['service'] ?? 'Amazon SNS';
-        flash('success', "Rekapitulasi laporan ekonomi berhasil dikirim ke {$dest} via {$serviceName}.");
+        if (($emailResult['mode'] ?? '') === 'simulation') {
+            flash('info', "Mode Simulasi: Rekapitulasi laporan berhasil dibuat dan dicatat pada log lokal. (Topik SNS belum aktif; email sungguhan tidak dikirim ke internet).");
+        } else {
+            flash('success', "Rekapitulasi laporan ekonomi berhasil dipublikasikan ke Topik Amazon SNS ({$dest}). Pastikan email subscription telah dikonfirmasi.");
+        }
     } else {
         $err = $emailResult['error'] ?? 'Terjadi kesalahan pada layanan Amazon SNS.';
-        flash('error', "Gagal mengirim notifikasi laporan: {$err} (Catatan: Seluruh data laporan tetap aman di sistem).");
+        flash('error', "Gagal mengirim notifikasi laporan via Amazon SNS: {$err}");
     }
     redirect('index.php?page=reports');
 }

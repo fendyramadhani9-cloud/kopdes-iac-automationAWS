@@ -139,9 +139,11 @@ $createResp = curl_exec($ch);
 $createdSuccess = strpos($createResp, 'Manager Baru Uji Coba') !== false;
 echo "Create Manager Baru: " . ($createdSuccess ? "SUKSES [OK]" : "FAIL") . "\n";
 
-// Bersihkan data test manager dari database
-$pdo = new PDO('sqlite:' . __DIR__ . '/../database/kopdes.sqlite');
-$pdo->prepare("DELETE FROM users WHERE email = ?")->execute([$testEmail]);
+require_once __DIR__ . '/../config/database.php';
+$pdo = Database::getConnection();
+if ($pdo) {
+    $pdo->prepare("DELETE FROM users WHERE email = ?")->execute([$testEmail]);
+}
 echo "Cleaned up test manager.\n";
 
 if (file_exists($cookieFile)) unlink($cookieFile);
