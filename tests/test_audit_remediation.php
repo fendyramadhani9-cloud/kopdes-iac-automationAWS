@@ -127,33 +127,30 @@ runTest("MySQL Advisory Lock Gagal Memperoleh Lock Langsung Hentikan Proses (Exi
 });
 
 // -----------------------------------------------------------------------------
-// TEST 4: Bootstrap Fail-Fast Policy Evaluation (user_data.sh.tftpl)
+// TEST 4: Stateless Bootstrap & SSM Centralized Initialization Verification
 // -----------------------------------------------------------------------------
-runTest("Bootstrap Script Memiliki Mekanisme Fail-Fast Tegas Pada Inisialisasi Database", function() {
-    $userDataFile = __DIR__ . '/../terraform/user_data.sh.tftpl';
-    $content = '';
-    if (file_exists($userDataFile)) {
-        $content = file_get_contents($userDataFile);
-    } else {
-        // Ambil dari branch iac-repo jika sedang di branch main
-        $content = shell_exec('git show iac-repo:terraform/user_data.sh.tftpl') ?: '';
-    }
+runTest("Bootstrap EC2 Murni Stateless & Inisialisasi Database Terpusat via SSM", function() {
+    $userDataContent = shell_exec('git show iac-repo:terraform/user_data.sh.tftpl') ?: '';
+    $ssmContent = shell_exec('git show iac-repo:ansible/run_db_init_ssm.sh') ?: '';
 
-    if (empty($content)) {
-        echo "Could not load user_data.sh.tftpl\n";
+    if (empty($userDataContent) || empty($ssmContent)) {
+        echo "Could not load user_data.sh.tftpl or run_db_init_ssm.sh\n";
         return false;
     }
 
-    $hasStrictInit = (
-        strpos($content, 'if ! php "$APP_DIR/database/init.php"') !== false
+    // 1. Bootstrap instance TIDAK menjalankan init.php berulang kali (mencegah lock contention ASG)
+    $bootstrapDoesNotRunMigration = (strpos($userDataContent, 'database/init.php') === false);
+
+    // 2. run_db_init_ssm.sh memeriksa Status dan ResponseCode dengan tegas
+    $ssmChecksResponseCode = (
+        strpos($ssmContent, 'RESPONSE_CODE') !== false &&
+        strpos($ssmContent, 'ResponseCode: $RESPONSE_CODE') !== false
     );
 
-    $hasNoWarningSwallow = (strpos($content, '|| echo "[WARN] Inisialisasi database otomatis via bootstrap menemui kendala') === false);
+    echo "Stateless Bootstrap (No Init on Boot): " . ($bootstrapDoesNotRunMigration ? "YES" : "NO") . "\n";
+    echo "SSM Strict ResponseCode & Status Check: " . ($ssmChecksResponseCode ? "YES" : "NO") . "\n";
 
-    echo "Strict DB Check: " . ($hasStrictInit ? "YES" : "NO") . "\n";
-    echo "No Warning Swallow: " . ($hasNoWarningSwallow ? "YES" : "NO") . "\n";
-
-    return ($hasStrictInit && $hasNoWarningSwallow);
+    return ($bootstrapDoesNotRunMigration && $ssmChecksResponseCode);
 });
 
 echo "==================================================================\n";
