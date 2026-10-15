@@ -57,17 +57,40 @@ output("Koneksi berhasil! (Latency: " . Database::getLatency() . " ms)", 'succes
 $connection = env('DB_CONNECTION', 'mysql');
 
 $lockAcquired = false;
+$lockName = 'kopdes_db_init_lock';
+
+// Pastikan lock otomatis dilepas jika terjadi shutdown atau exit prematur
+register_shutdown_function(function() use ($pdo, $connection, &$lockAcquired, $lockName) {
+    if ($connection === 'mysql' && $lockAcquired && $pdo) {
+        try {
+            $pdo->exec("SELECT RELEASE_LOCK('{$lockName}')");
+            $lockAcquired = false;
+        } catch (\Throwable $e) {
+            // Abaikan error pada shutdown handler
+        }
+    }
+});
+
 if ($connection === 'mysql') {
     try {
-        $lockStmt = $pdo->query("SELECT GET_LOCK('kopdes_db_init_lock', 60)");
-        $lockAcquired = ($lockStmt && (int)$lockStmt->fetchColumn() === 1);
-        if ($lockAcquired) {
-            output("Berhasil memperoleh MySQL advisory lock (kopdes_db_init_lock).", 'info');
+        $timeout = 60;
+        output("Mencoba memperoleh MySQL advisory lock ('{$lockName}', timeout {$timeout}s)...", 'info');
+        $lockStmt = $pdo->query("SELECT GET_LOCK('{$lockName}', {$timeout})");
+        $lockResult = $lockStmt ? (int)$lockStmt->fetchColumn() : 0;
+
+        if ($lockResult === 1) {
+            $lockAcquired = true;
+            output("Berhasil memperoleh exclusive MySQL advisory lock ('{$lockName}').", 'success');
         } else {
-            output("Menunggu atau gagal memperoleh MySQL advisory lock (kopdes_db_init_lock).", 'warning');
+            // Lock timeout (0) atau error konkurensi (NULL)
+            output("FATAL: Gagal memperoleh MySQL advisory lock ('{$lockName}'). Timeout {$timeout}s terlampaui atau lock sedang dipegang oleh proses lain.", 'error');
+            if (!$isCli) echo "</body></html>";
+            exit(1);
         }
     } catch (\Throwable $e) {
-        output("Advisory lock tidak dapat diaktifkan: " . $e->getMessage(), 'warning');
+        output("FATAL: Exception saat meminta MySQL advisory lock ('{$lockName}'): " . $e->getMessage(), 'error');
+        if (!$isCli) echo "</body></html>";
+        exit(1);
     }
 }
 
@@ -634,10 +657,11 @@ output("Tabel memberships, products, dan transactions berhasil disinkronkan!", '
 $totalKopdesFinal = (int)$pdo->query("SELECT COUNT(*) FROM kopdes")->fetchColumn();
 if ($connection === 'mysql' && $lockAcquired) {
     try {
-        $pdo->exec("SELECT RELEASE_LOCK('kopdes_db_init_lock')");
-        output("MySQL advisory lock (kopdes_db_init_lock) berhasil dilepaskan.", 'info');
+        $pdo->exec("SELECT RELEASE_LOCK('{$lockName}')");
+        $lockAcquired = false;
+        output("MySQL advisory lock ('{$lockName}') berhasil dilepaskan.", 'success');
     } catch (\Throwable $e) {
-        // ignore
+        output("Peringatan saat melepaskan lock: " . $e->getMessage(), 'warning');
     }
 }
 
