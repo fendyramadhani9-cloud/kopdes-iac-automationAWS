@@ -30,7 +30,7 @@ function runTest(string $title, callable $testFn) {
 // TEST 1: Database Connection Failure (Fail-Fast Verification)
 // -----------------------------------------------------------------------------
 runTest("Inisialisasi Database Gagal Saat Kredensial / Host Invalid (Exit Code 1)", function() {
-    $cmd = 'php -r "putenv(\"DB_CONNECTION=mysql\"); putenv(\"DB_HOST=192.0.2.1\"); putenv(\"DB_DATABASE=invalid\"); include \"database/init.php\";"';
+    $cmd = 'php -r "putenv(\"DB_CONNECTION=mysql\"); putenv(\"DB_HOST=127.0.0.1\"); putenv(\"DB_PORT=65432\"); putenv(\"DB_DATABASE=invalid\"); include \"database/init.php\";"';
     $output = [];
     $exitCode = 0;
     exec($cmd . ' 2>&1', $output, $exitCode);
@@ -131,18 +131,21 @@ runTest("MySQL Advisory Lock Gagal Memperoleh Lock Langsung Hentikan Proses (Exi
 // -----------------------------------------------------------------------------
 runTest("Bootstrap Script Memiliki Mekanisme Fail-Fast Tegas Pada Inisialisasi Database", function() {
     $userDataFile = __DIR__ . '/../terraform/user_data.sh.tftpl';
-    if (!file_exists($userDataFile)) {
-        // Fallback jika di branch main
-        $userDataFile = 'd:/Projects/DevOps/Scripts/kopdes/terraform/user_data.sh.tftpl';
+    $content = '';
+    if (file_exists($userDataFile)) {
+        $content = file_get_contents($userDataFile);
+    } else {
+        // Ambil dari branch iac-repo jika sedang di branch main
+        $content = shell_exec('git show iac-repo:terraform/user_data.sh.tftpl') ?: '';
     }
-    
-    // Periksa apakah user_data.sh.tftpl menangani kegagalan init.php secara fail-fast
-    $content = file_get_contents($userDataFile);
-    
+
+    if (empty($content)) {
+        echo "Could not load user_data.sh.tftpl\n";
+        return false;
+    }
+
     $hasStrictInit = (
-        strpos($content, 'if ! php "$APP_DIR/database/init.php"') !== false ||
-        strpos($content, 'php "$APP_DIR/database/init.php" || exit 1') !== false ||
-        (strpos($content, 'php "$APP_DIR/database/init.php"') !== false && strpos($content, '|| echo "[WARN]"') === false)
+        strpos($content, 'if ! php "$APP_DIR/database/init.php"') !== false
     );
 
     $hasNoWarningSwallow = (strpos($content, '|| echo "[WARN] Inisialisasi database otomatis via bootstrap menemui kendala') === false);
